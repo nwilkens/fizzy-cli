@@ -245,8 +245,7 @@ async fn main() -> Result<()> {
 
         // --- Pins ---
         Commands::Pins => {
-            let config = Config::load()?;
-            let client = FizzyClient::new_unscoped(&config, url_override.as_deref())?;
+            let client = make_client(account_override.as_deref(), url_override.as_deref())?;
             commands::pins::list(&client, json).await?;
         }
 
@@ -279,8 +278,8 @@ async fn main() -> Result<()> {
                 WebhookCommand::Show { board, id } => {
                     commands::webhooks::show(&client, &board, &id, json).await?;
                 }
-                WebhookCommand::Create { board, name, url, actions } => {
-                    commands::webhooks::create(&client, &board, &name, &url, &actions, json).await?;
+                WebhookCommand::Create { board, name, payload_url, actions } => {
+                    commands::webhooks::create(&client, &board, &name, &payload_url, &actions, json).await?;
                 }
                 WebhookCommand::Update { board, id, name, actions } => {
                     commands::webhooks::update(&client, &board, &id, name, actions).await?;

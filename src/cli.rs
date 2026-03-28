@@ -451,8 +451,8 @@ pub enum WebhookCommand {
         #[arg(long)]
         name: String,
         /// Payload URL
-        #[arg(long)]
-        url: String,
+        #[arg(long = "payload-url")]
+        payload_url: String,
         /// Subscribed actions (comma-separated)
         #[arg(long)]
         actions: String,

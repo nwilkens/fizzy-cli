@@ -26,6 +26,7 @@ impl FizzyClient {
             .unwrap_or_else(|| config.account().unwrap_or_default());
 
         let http = Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
             .build()?;
 
         Ok(Self {
@@ -44,6 +45,7 @@ impl FizzyClient {
             .unwrap_or_else(|| config.base_url());
 
         let http = Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
             .build()?;
 
         Ok(Self {
