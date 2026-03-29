@@ -387,7 +387,64 @@ pub async fn claim(client: &FizzyClient, number: u64) -> Result<()> {
         Err(_) => {}
     }
 
+    // Fetch comments for context
+    let comments: Vec<Comment> = client
+        .get_list(&format!("/cards/{number}/comments"), true)
+        .await
+        .unwrap_or_default();
+
+    // Output task brief for agent plan mode
     println!("Claimed #{number} — assigned to {my_name}, moved to In Progress.");
+    println!();
+    println!("---");
+    println!("# Task #{}: {}", card.number, card.title);
+    println!();
+    if !card.description.is_empty() {
+        println!("{}", card.description);
+        println!();
+    }
+    if !card.tags.is_empty() {
+        let tags = format_tags_without_deps(&card.tags);
+        let deps = parse_deps(&card.tags);
+        if !tags.is_empty() {
+            println!("Tags:{tags}");
+        }
+        if !deps.is_empty() {
+            let dep_strs: Vec<String> = deps.iter().map(|n| format!("#{n}")).collect();
+            println!("Depends on: {} (completed)", dep_strs.join(", "));
+        }
+        println!();
+    }
+    if let Some(ref steps) = card.steps {
+        if !steps.is_empty() {
+            println!("Steps:");
+            for s in steps {
+                let check = if s.completed { "[x]" } else { "[ ]" };
+                println!("  {check} {}", s.content);
+            }
+            println!();
+        }
+    }
+    // Show recent comments (skip system comments, limit to last 5)
+    let user_comments: Vec<&Comment> = comments
+        .iter()
+        .filter(|c| c.creator.name != "System")
+        .collect();
+    if !user_comments.is_empty() {
+        let show = if user_comments.len() > 5 {
+            &user_comments[user_comments.len() - 5..]
+        } else {
+            &user_comments
+        };
+        println!("Recent comments:");
+        for c in show {
+            println!("  {} — {}", c.creator.name, c.body.plain_text);
+        }
+        println!();
+    }
+    println!("Enter plan mode to design your implementation approach.");
+    println!("When done: `fizzyctl progress {number} \"message\"` then `fizzyctl done {number}`");
+
     Ok(())
 }
 

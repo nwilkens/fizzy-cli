@@ -213,10 +213,11 @@ Use `fizzyctl` to manage tasks from the Fizzy board.
 - `fizzyctl blocked` — list cards waiting on dependencies
 
 ### Working on a card
-1. `fizzyctl claim <number>` — assign to self, move to In Progress
-2. Do the work, commit atomically
-3. `fizzyctl progress <number> "message"` — log progress
-4. `fizzyctl review <number>` — move to Review for human check, or
+1. `fizzyctl claim <number>` — assign to self, move to In Progress (outputs task brief)
+2. Enter plan mode (`/plan`) — design your implementation approach based on the task brief
+3. Implement the plan, commit atomically
+4. `fizzyctl progress <number> "message"` — log progress
+5. `fizzyctl review <number>` — move to Review for human check, or
    `fizzyctl done <number>` — close the card
 
 ### Dependencies
