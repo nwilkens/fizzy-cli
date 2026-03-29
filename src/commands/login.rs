@@ -45,7 +45,7 @@ pub async fn login(token: Option<String>, url_override: Option<&str>, json: bool
             .get(format!("{}/my/identity", base_url))
             .header("Accept", "application/json")
             .header("Cookie", format!("session_token={session_token}"))
-            .header("User-Agent", "fizzyctl/0.1.0")
+            .header("User-Agent", "fz/0.1.0")
             .send()
             .await?;
         let identity: IdentityResponse = resp.json().await?;
@@ -93,7 +93,7 @@ pub async fn login(token: Option<String>, url_override: Option<&str>, json: bool
         config.account = Some(slug.clone());
         if !json {
             println!(
-                "\nDefault account set to: {} ({})\nTo change: fizzyctl set account <slug>",
+                "\nDefault account set to: {} ({})\nTo change: fz set account <slug>",
                 identity.accounts[0].name, slug
             );
         }

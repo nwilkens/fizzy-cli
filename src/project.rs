@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-const PROJECT_FILE: &str = ".fizzyctl.toml";
+const PROJECT_FILE: &str = ".fz.toml";
 
 #[derive(Debug, Serialize, Deserialize, Default)]
 pub struct ProjectConfig {
@@ -12,7 +12,7 @@ pub struct ProjectConfig {
 }
 
 impl ProjectConfig {
-    /// Walk up from cwd to find .fizzyctl.toml
+    /// Walk up from cwd to find .fz.toml
     pub fn find() -> Option<PathBuf> {
         let mut dir = std::env::current_dir().ok()?;
         loop {
@@ -51,7 +51,7 @@ impl ProjectConfig {
         self.board_id.as_deref()
     }
 
-    /// Project root is the directory containing .fizzyctl.toml
+    /// Project root is the directory containing .fz.toml
     pub fn project_root() -> Option<PathBuf> {
         Self::find().and_then(|p| p.parent().map(|p| p.to_path_buf()))
     }
@@ -66,7 +66,7 @@ impl ProjectConfig {
             .or_else(|| project.board_id.clone())
             .or_else(|| global.board.clone())
             .ok_or_else(|| {
-                anyhow!("No board specified. Run `fizzyctl init` or use --board <id>.")
+                anyhow!("No board specified. Run `fz init` or use --board <id>.")
             })
     }
 }

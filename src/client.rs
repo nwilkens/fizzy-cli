@@ -81,7 +81,7 @@ impl FizzyClient {
     fn default_headers(&self) -> HeaderMap {
         let mut headers = HeaderMap::new();
         headers.insert(ACCEPT, HeaderValue::from_static("application/json"));
-        headers.insert(USER_AGENT, HeaderValue::from_static("fizzyctl/0.1.0"));
+        headers.insert(USER_AGENT, HeaderValue::from_static("fz/0.1.0"));
         if !self.token.is_empty() {
             if let Ok(val) = HeaderValue::from_str(&format!("Bearer {}", self.token)) {
                 headers.insert(AUTHORIZATION, val);
@@ -104,7 +104,7 @@ impl FizzyClient {
             return Ok(());
         }
         match status {
-            StatusCode::UNAUTHORIZED => Err(anyhow!("Authentication failed. Run `fizzyctl login` to authenticate.")),
+            StatusCode::UNAUTHORIZED => Err(anyhow!("Authentication failed. Run `fz login` to authenticate.")),
             StatusCode::FORBIDDEN => Err(anyhow!("Permission denied.")),
             StatusCode::NOT_FOUND => Err(anyhow!("Not found.")),
             StatusCode::UNPROCESSABLE_ENTITY => Err(anyhow!("Validation error.")),
@@ -384,7 +384,7 @@ impl FizzyClient {
             .post(&url)
             .header(ACCEPT, "application/json")
             .header(CONTENT_TYPE, "application/json")
-            .header(USER_AGENT, "fizzyctl/0.1.0")
+            .header(USER_AGENT, "fz/0.1.0")
             .json(&body)
             .send()
             .await?;
@@ -407,7 +407,7 @@ impl FizzyClient {
             .post(&url)
             .header(ACCEPT, "application/json")
             .header(CONTENT_TYPE, "application/json")
-            .header(USER_AGENT, "fizzyctl/0.1.0")
+            .header(USER_AGENT, "fz/0.1.0")
             .header(
                 "Cookie",
                 format!("pending_authentication_token={pending_token}"),
@@ -428,7 +428,7 @@ impl FizzyClient {
         let url = format!("{}/{}/my/access_tokens", self.base_url, account_slug);
         let body = crate::models::CreateAccessTokenRequest {
             access_token: crate::models::CreateAccessTokenBody {
-                description: "fizzyctl CLI".to_string(),
+                description: "fz CLI".to_string(),
                 permission: "write".to_string(),
             },
         };
@@ -437,7 +437,7 @@ impl FizzyClient {
             .post(&url)
             .header(ACCEPT, "application/json")
             .header(CONTENT_TYPE, "application/json")
-            .header(USER_AGENT, "fizzyctl/0.1.0")
+            .header(USER_AGENT, "fz/0.1.0")
             .header("Cookie", format!("session_token={session_token}"))
             .json(&body)
             .send()

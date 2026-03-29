@@ -15,8 +15,8 @@ pub async fn init(
 ) -> Result<()> {
     let cwd = std::env::current_dir()?;
 
-    if cwd.join(".fizzyctl.toml").exists() {
-        anyhow::bail!("Already initialized. Remove .fizzyctl.toml to reinitialize.");
+    if cwd.join(".fz.toml").exists() {
+        anyhow::bail!("Already initialized. Remove .fz.toml to reinitialize.");
     }
 
     let (board_id, board_name) = if let Some(board_ref) = existing_board {
@@ -27,13 +27,13 @@ pub async fn init(
 
     println!("  Board: {board_name} ({board_id})");
 
-    // Write .fizzyctl.toml
+    // Write .fz.toml
     let project = ProjectConfig {
         board_id: Some(board_id.clone()),
         account: config.account(),
     };
-    ProjectConfig::save(&cwd.join(".fizzyctl.toml"), &project)?;
-    println!("  Config: .fizzyctl.toml");
+    ProjectConfig::save(&cwd.join(".fz.toml"), &project)?;
+    println!("  Config: .fz.toml");
 
     // Write Claude Code hooks
     write_claude_hooks(&cwd)?;
@@ -44,7 +44,7 @@ pub async fn init(
     println!("  Workflow: CLAUDE.md updated");
 
     println!();
-    println!("Ready! Run `fizzyctl prime` to see your board.");
+    println!("Ready! Run `fz prime` to see your board.");
 
     Ok(())
 }
@@ -83,7 +83,7 @@ async fn create_board(
         .ok_or_else(|| anyhow!("Could not determine project name. Use --name."))?;
 
     let board_name = format!("{}-{}", readable, short_hash());
-    println!("Initializing fizzyctl: {board_name}");
+    println!("Initializing fz: {board_name}");
 
     let body = CreateBoardRequest {
         board: CreateBoardBody {
@@ -175,16 +175,29 @@ fn write_claude_hooks(project_root: &Path) -> Result<()> {
         .ok_or_else(|| anyhow!("SessionStart is not an array"))?;
 
     let already_has = session_arr.iter().any(|h| {
-        h.get("command")
-            .and_then(|c| c.as_str())
-            .map(|s| s.contains("fizzyctl prime"))
+        // Check nested hooks array format: { matcher, hooks: [{ command }] }
+        h.get("hooks")
+            .and_then(|hooks| hooks.as_array())
+            .map(|hooks| {
+                hooks.iter().any(|hook| {
+                    hook.get("command")
+                        .and_then(|c| c.as_str())
+                        .map(|s| s.contains("fz prime"))
+                        .unwrap_or(false)
+                })
+            })
             .unwrap_or(false)
     });
 
     if !already_has {
         session_arr.push(serde_json::json!({
-            "type": "command",
-            "command": "fizzyctl prime 2>/dev/null || true"
+            "matcher": "",
+            "hooks": [
+                {
+                    "type": "command",
+                    "command": "fz prime 2>/dev/null || true"
+                }
+            ]
         }));
     }
 
@@ -199,31 +212,31 @@ fn write_claude_hooks(project_root: &Path) -> Result<()> {
 fn write_claude_md(project_root: &Path) -> Result<()> {
     let claude_md = project_root.join("CLAUDE.md");
 
-    let marker = "<!-- fizzyctl -->";
+    let marker = "<!-- fz -->";
     let workflow_section = format!(
         r#"
 {marker}
-## Task Workflow (fizzyctl)
+## Task Workflow (fz)
 
-Use `fizzyctl` to manage tasks from the Fizzy board.
+Use `fz` to manage tasks from the Fizzy board.
 
 ### Finding work
-- `fizzyctl prime` — see board context, your cards, and what's ready
-- `fizzyctl ready` — list cards available for pickup
-- `fizzyctl blocked` — list cards waiting on dependencies
+- `fz prime` — see board context, your cards, and what's ready
+- `fz ready` — list cards available for pickup
+- `fz blocked` — list cards waiting on dependencies
 
 ### Working on a card
-1. `fizzyctl claim <number>` — assign to self, move to In Progress (outputs task brief)
+1. `fz claim <number>` — assign to self, move to In Progress (outputs task brief)
 2. Enter plan mode (`/plan`) — design your implementation approach based on the task brief
 3. Implement the plan, commit atomically
-4. `fizzyctl progress <number> "message"` — log progress
-5. `fizzyctl review <number>` — move to Review for human check, or
-   `fizzyctl done <number>` — close the card
+4. `fz progress <number> "message"` — log progress
+5. `fz review <number>` — move to Review for human check, or
+   `fz done <number>` — close the card
 
 ### Dependencies
-- `fizzyctl dep <card> <depends-on>` — card depends on another (uses `#after-N` tags)
-- `fizzyctl blocked` — show cards with unsatisfied dependencies
-- Cards with `#after-N` tags won't show in `fizzyctl ready` until card N is closed
+- `fz dep <card> <depends-on>` — card depends on another (uses `#after-N` tags)
+- `fz blocked` — show cards with unsatisfied dependencies
+- Cards with `#after-N` tags won't show in `fz ready` until card N is closed
 {marker}"#
     );
 

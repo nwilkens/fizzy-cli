@@ -67,7 +67,7 @@ impl Config {
 
     pub fn require_token(&self) -> Result<String> {
         self.token()
-            .ok_or_else(|| anyhow!("Not logged in. Run `fizzyctl login` first."))
+            .ok_or_else(|| anyhow!("Not logged in. Run `fz login` first."))
     }
 
     pub fn account(&self) -> Option<String> {
@@ -78,7 +78,7 @@ impl Config {
 
     pub fn require_account(&self) -> Result<String> {
         self.account().ok_or_else(|| {
-            anyhow!("No account set. Run `fizzyctl accounts` then `fizzyctl set account <slug>`.")
+            anyhow!("No account set. Run `fz accounts` then `fz set account <slug>`.")
         })
     }
 }

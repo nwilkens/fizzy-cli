@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "fizzyctl", about = "Fizzy project management CLI", version)]
+#[command(name = "fz", about = "Fizzy project management CLI", version)]
 pub struct Cli {
     /// Output raw JSON instead of formatted text
     #[arg(long, global = true)]
@@ -108,7 +108,7 @@ pub enum Commands {
 
     // --- Agent workflow commands ---
 
-    /// Initialize a project for fizzyctl (board, columns, hooks, CLAUDE.md)
+    /// Initialize a project for fz (board, columns, hooks, CLAUDE.md)
     Init {
         /// Board name (defaults to <dirname>-<hash>)
         #[arg(long)]

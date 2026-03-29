@@ -31,7 +31,7 @@ async fn find_column(client: &FizzyClient, board_id: &str, name: &str) -> Result
         .into_iter()
         .find(|c| c.name.eq_ignore_ascii_case(name))
         .ok_or_else(|| {
-            anyhow!("Column \"{name}\" not found. Use `fizzyctl columns <board_id>`")
+            anyhow!("Column \"{name}\" not found. Use `fz columns <board_id>`")
         })
 }
 
@@ -238,11 +238,11 @@ pub async fn prime(
     }
 
     println!("## Workflow:");
-    println!("  fizzyctl claim <n>       — assign to self, move to In Progress");
-    println!("  fizzyctl progress <n> .. — log progress comment");
-    println!("  fizzyctl review <n>      — move to Review");
-    println!("  fizzyctl done <n>        — close the card");
-    println!("  fizzyctl dep <n> <dep>   — add dependency (#after-N tag)");
+    println!("  fz claim <n>       — assign to self, move to In Progress");
+    println!("  fz progress <n> .. — log progress comment");
+    println!("  fz review <n>      — move to Review");
+    println!("  fz done <n>        — close the card");
+    println!("  fz dep <n> <dep>   — add dependency (#after-N tag)");
 
     Ok(())
 }
@@ -404,7 +404,7 @@ pub async fn plan(client: &FizzyClient, number: u64, text: Option<&str>) -> Resu
         if let Some(plan) = extract_plan(&card.description) {
             println!("{plan}");
         } else {
-            println!("No plan on #{number}. Set one with: fizzyctl plan {number} \"plan text\"");
+            println!("No plan on #{number}. Set one with: fz plan {number} \"plan text\"");
         }
     }
     Ok(())
@@ -516,7 +516,7 @@ async fn print_task_brief(client: &FizzyClient, card: &Card, number: u64) -> Res
     } else {
         println!("No plan yet. Enter plan mode (`/plan`) to design your approach, then:");
     }
-    println!("  `fizzyctl progress {number} \"message\"` → `fizzyctl done {number}`");
+    println!("  `fz progress {number} \"message\"` → `fz done {number}`");
 
     Ok(())
 }

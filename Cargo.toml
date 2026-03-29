@@ -1,10 +1,10 @@
 [package]
-name = "fizzyctl"
+name = "fz"
 version = "0.1.0"
 edition = "2021"
 
 [[bin]]
-name = "fizzyctl"
+name = "fz"
 path = "src/main.rs"
 
 [dependencies]
