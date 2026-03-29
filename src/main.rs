@@ -5,6 +5,7 @@ mod config;
 mod models;
 mod output;
 mod project;
+mod tui;
 
 use anyhow::Result;
 use clap::Parser;
@@ -324,6 +325,17 @@ async fn main() -> Result<()> {
         Commands::NotificationUnread { id } => {
             let client = make_client(account_override.as_deref(), url_override.as_deref())?;
             commands::notifications::mark_unread(&client, &id).await?;
+        }
+
+        // --- TUI ---
+        Commands::Tui { board } => {
+            let config = Config::load()?;
+            let project = project::ProjectConfig::load_or_default();
+            let client = make_client(account_override.as_deref(), url_override.as_deref())?;
+            let board_id = commands::agent::resolve_board_id(
+                board.as_deref(), &project, &config,
+            )?;
+            tui::run_tui(client, &board_id).await?;
         }
 
         // --- Webhooks ---

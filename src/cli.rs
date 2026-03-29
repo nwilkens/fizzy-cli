@@ -221,6 +221,13 @@ pub enum Commands {
     /// Work with a specific webhook
     #[command(subcommand)]
     Webhook(WebhookCommand),
+
+    /// Interactive board view (TUI)
+    Tui {
+        /// Board name or ID
+        #[arg(long, short = 'b')]
+        board: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]

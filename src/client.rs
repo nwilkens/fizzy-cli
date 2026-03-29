@@ -8,6 +8,7 @@ use serde::Serialize;
 
 use crate::config::Config;
 
+#[derive(Clone)]
 pub struct FizzyClient {
     http: Client,
     base_url: String,
