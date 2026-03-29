@@ -132,13 +132,13 @@ pub struct Step {
 
 // --- Comments ---
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct CommentBody {
     pub plain_text: String,
     pub html: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct Comment {
     pub id: String,
     pub created_at: DateTime<Utc>,
@@ -150,7 +150,7 @@ pub struct Comment {
     pub url: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct CommentCard {
     pub id: String,
     pub url: String,

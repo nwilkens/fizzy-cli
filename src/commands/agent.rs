@@ -7,6 +7,8 @@ use crate::output;
 use crate::project::ProjectConfig;
 
 const DEP_PREFIX: &str = "after-";
+const PLAN_PREFIX: &str = "## Plan";
+const PLAN_REACTION: &str = "💡";
 
 /// Get the current user's ID in the active account.
 async fn my_user_id(client: &FizzyClient) -> Result<(String, String)> {
@@ -348,6 +350,86 @@ pub async fn dep(client: &FizzyClient, number: u64, depends_on: u64) -> Result<(
     Ok(())
 }
 
+// --- plan ---
+
+/// Find the plan comment on a card. Checks for 💡 reaction first (via API),
+/// falls back to ## Plan text prefix.
+async fn find_plan_comment(client: &FizzyClient, number: u64) -> Result<Option<Comment>> {
+    let comments: Vec<Comment> = client
+        .get_list(&format!("/cards/{number}/comments"), true)
+        .await
+        .unwrap_or_default();
+
+    // First pass: check for ## Plan prefix in text (fast, no extra API calls)
+    for c in &comments {
+        if c.body.plain_text.starts_with(PLAN_PREFIX) {
+            return Ok(Some(c.clone()));
+        }
+    }
+
+    // Second pass: check for 💡 reaction on non-system comments
+    for c in &comments {
+        if c.creator.name == "System" {
+            continue;
+        }
+        let reactions: Vec<Reaction> = client
+            .get_list(
+                &format!("/cards/{number}/comments/{}/reactions", c.id),
+                true,
+            )
+            .await
+            .unwrap_or_default();
+        if reactions.iter().any(|r| r.content == PLAN_REACTION) {
+            return Ok(Some(c.clone()));
+        }
+    }
+
+    Ok(None)
+}
+
+pub async fn plan(client: &FizzyClient, number: u64, text: Option<&str>) -> Result<()> {
+    if let Some(plan_text) = text {
+        // Set the plan: create comment with ## Plan prefix, then react with 💡
+        let body_text = format!("{PLAN_PREFIX}\n{plan_text}");
+        let body = CreateCommentRequest {
+            comment: CreateCommentBody {
+                body: body_text,
+            },
+        };
+        let raw = client
+            .post_raw(&format!("/cards/{number}/comments"), &body)
+            .await?;
+
+        // Extract comment ID from response to react to it
+        if let Some(comment_id) = raw.get("id").and_then(|v| v.as_str()) {
+            let reaction_body = CreateReactionRequest {
+                reaction: CreateReactionBody {
+                    content: PLAN_REACTION.to_string(),
+                },
+            };
+            let _ = client
+                .post_raw(
+                    &format!("/cards/{number}/comments/{comment_id}/reactions"),
+                    &reaction_body,
+                )
+                .await;
+        }
+
+        println!("Plan set on #{number} 💡");
+    } else {
+        // Show the plan
+        match find_plan_comment(client, number).await? {
+            Some(c) => {
+                println!("{}", c.body.plain_text);
+            }
+            None => {
+                println!("No plan found on #{number}. Set one with: fizzyctl plan {number} \"plan text\"");
+            }
+        }
+    }
+    Ok(())
+}
+
 // --- claim ---
 
 pub async fn claim(client: &FizzyClient, number: u64) -> Result<()> {
@@ -387,15 +469,16 @@ pub async fn claim(client: &FizzyClient, number: u64) -> Result<()> {
         Err(_) => {}
     }
 
-    // Fetch comments for context
-    let comments: Vec<Comment> = client
-        .get_list(&format!("/cards/{number}/comments"), true)
-        .await
-        .unwrap_or_default();
-
-    // Output task brief for agent plan mode
+    // Output task brief
     println!("Claimed #{number} — assigned to {my_name}, moved to In Progress.");
     println!();
+    print_task_brief(client, &card, number).await?;
+
+    Ok(())
+}
+
+/// Print a rich task brief for agent context. Used by `claim` and can be called standalone.
+async fn print_task_brief(client: &FizzyClient, card: &Card, number: u64) -> Result<()> {
     println!("---");
     println!("# Task #{}: {}", card.number, card.title);
     println!();
@@ -425,10 +508,29 @@ pub async fn claim(client: &FizzyClient, number: u64) -> Result<()> {
             println!();
         }
     }
-    // Show recent comments (skip system comments, limit to last 5)
+
+    // Show plan if one exists
+    let plan = find_plan_comment(client, number).await?;
+    if let Some(ref p) = plan {
+        println!("## Plan (💡)");
+        // Strip the "## Plan\n" prefix from display since we already have the header
+        let text = p.body.plain_text.strip_prefix(PLAN_PREFIX).unwrap_or(&p.body.plain_text);
+        let text = text.trim_start_matches('\n');
+        println!("{text}");
+        println!();
+    }
+
+    // Show recent non-system, non-plan comments
+    let comments: Vec<Comment> = client
+        .get_list(&format!("/cards/{number}/comments"), true)
+        .await
+        .unwrap_or_default();
     let user_comments: Vec<&Comment> = comments
         .iter()
-        .filter(|c| c.creator.name != "System")
+        .filter(|c| {
+            c.creator.name != "System"
+                && !c.body.plain_text.starts_with(PLAN_PREFIX)
+        })
         .collect();
     if !user_comments.is_empty() {
         let show = if user_comments.len() > 5 {
@@ -442,8 +544,13 @@ pub async fn claim(client: &FizzyClient, number: u64) -> Result<()> {
         }
         println!();
     }
-    println!("Enter plan mode to design your implementation approach.");
-    println!("When done: `fizzyctl progress {number} \"message\"` then `fizzyctl done {number}`");
+
+    if plan.is_some() {
+        println!("Plan exists. Implement it, then:");
+    } else {
+        println!("No plan yet. Enter plan mode (`/plan`) to design your approach, then:");
+    }
+    println!("  `fizzyctl progress {number} \"message\"` → `fizzyctl done {number}`");
 
     Ok(())
 }

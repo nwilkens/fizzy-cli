@@ -150,6 +150,14 @@ pub enum Commands {
         depends_on: u64,
     },
 
+    /// View or set the plan on a card (💡 comment)
+    Plan {
+        /// Card number
+        number: u64,
+        /// Plan text (if omitted, shows existing plan)
+        text: Option<String>,
+    },
+
     /// Claim a card: assign to self and move to "In Progress"
     Claim {
         /// Card number

@@ -277,6 +277,10 @@ async fn main() -> Result<()> {
             let client = make_client(account_override.as_deref(), url_override.as_deref())?;
             commands::agent::blocked(&client, &config, &project, board.as_deref(), json).await?;
         }
+        Commands::Plan { number, text } => {
+            let client = make_client(account_override.as_deref(), url_override.as_deref())?;
+            commands::agent::plan(&client, number, text.as_deref()).await?;
+        }
         Commands::Dep { number, depends_on } => {
             let client = make_client(account_override.as_deref(), url_override.as_deref())?;
             commands::agent::dep(&client, number, depends_on).await?;
