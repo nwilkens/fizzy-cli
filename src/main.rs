@@ -250,10 +250,10 @@ async fn main() -> Result<()> {
         }
 
         // --- Agent workflow ---
-        Commands::Init { name } => {
+        Commands::Init { name, board } => {
             let config = Config::load()?;
             let client = make_client(account_override.as_deref(), url_override.as_deref())?;
-            commands::init::init(&client, &config, name.as_deref()).await?;
+            commands::init::init(&client, &config, name.as_deref(), board.as_deref()).await?;
         }
         Commands::Whoami => {
             let client = make_client(account_override.as_deref(), url_override.as_deref())?;

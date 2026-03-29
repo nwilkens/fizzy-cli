@@ -110,9 +110,12 @@ pub enum Commands {
 
     /// Initialize a project for fizzyctl (board, columns, hooks, CLAUDE.md)
     Init {
-        /// Board name (defaults to directory name)
+        /// Board name (defaults to <dirname>-<hash>)
         #[arg(long)]
         name: Option<String>,
+        /// Use an existing board by ID or name instead of creating one
+        #[arg(long, short = 'b')]
+        board: Option<String>,
     },
 
     /// Show current identity and user info
