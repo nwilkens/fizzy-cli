@@ -1,0 +1,10 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "command": "fizzyctl prime 2>/dev/null || true",
+        "type": "command"
+      }
+    ]
+  }
+}
