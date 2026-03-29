@@ -1,3 +1,4 @@
+pub mod agent;
 pub mod login;
 pub mod accounts;
 pub mod boards;

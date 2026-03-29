@@ -9,6 +9,7 @@ pub struct Config {
     pub base_url: Option<String>,
     pub account: Option<String>,
     pub token: Option<String>,
+    pub board: Option<String>,
 }
 
 impl Config {

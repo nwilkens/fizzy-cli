@@ -35,6 +35,7 @@ async fn main() -> Result<()> {
             println!("Config file: {}", Config::config_path().display());
             println!("Base URL:    {}", config.base_url());
             println!("Account:     {}", config.account().unwrap_or_else(|| "(not set)".to_string()));
+            println!("Board:       {}", config.board.as_deref().unwrap_or("(not set)"));
             println!("Token:       {}", if config.token().is_some() { "(set)" } else { "(not set)" });
         }
         Commands::Set { key, value } => {
@@ -48,8 +49,12 @@ async fn main() -> Result<()> {
                     config.base_url = Some(value.clone());
                     println!("Base URL set to: {value}");
                 }
+                "board" => {
+                    config.board = Some(value.clone());
+                    println!("Default board set to: {value}");
+                }
                 _ => {
-                    anyhow::bail!("Unknown config key: {key}. Valid keys: account, url");
+                    anyhow::bail!("Unknown config key: {key}. Valid keys: account, url, board");
                 }
             }
             config.save()?;
@@ -241,6 +246,38 @@ async fn main() -> Result<()> {
         Commands::Tags => {
             let client = make_client(account_override.as_deref(), url_override.as_deref())?;
             commands::tags::list(&client, json).await?;
+        }
+
+        // --- Agent workflow ---
+        Commands::Whoami => {
+            let client = make_client(account_override.as_deref(), url_override.as_deref())?;
+            commands::agent::whoami(&client, json).await?;
+        }
+        Commands::Prime { board } => {
+            let config = Config::load()?;
+            let client = make_client(account_override.as_deref(), url_override.as_deref())?;
+            commands::agent::prime(&client, &config, board.as_deref(), json).await?;
+        }
+        Commands::Ready { board } => {
+            let config = Config::load()?;
+            let client = make_client(account_override.as_deref(), url_override.as_deref())?;
+            commands::agent::ready(&client, &config, board.as_deref(), json).await?;
+        }
+        Commands::Claim { number } => {
+            let client = make_client(account_override.as_deref(), url_override.as_deref())?;
+            commands::agent::claim(&client, number).await?;
+        }
+        Commands::Progress { number, message } => {
+            let client = make_client(account_override.as_deref(), url_override.as_deref())?;
+            commands::agent::progress(&client, number, &message).await?;
+        }
+        Commands::Done { number, message } => {
+            let client = make_client(account_override.as_deref(), url_override.as_deref())?;
+            commands::agent::done(&client, number, message.as_deref()).await?;
+        }
+        Commands::Review { number, message } => {
+            let client = make_client(account_override.as_deref(), url_override.as_deref())?;
+            commands::agent::review(&client, number, message.as_deref()).await?;
         }
 
         // --- Pins ---

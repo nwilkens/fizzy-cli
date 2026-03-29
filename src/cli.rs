@@ -106,6 +106,55 @@ pub enum Commands {
     /// List tags in the current account
     Tags,
 
+    // --- Agent workflow commands ---
+
+    /// Show current identity and user info
+    Whoami,
+
+    /// Inject task context for AI agents (compact, token-efficient)
+    Prime {
+        /// Board name or ID (uses default board from config if set)
+        #[arg(long, short = 'b')]
+        board: Option<String>,
+    },
+
+    /// Show cards ready for pickup (in "To Do" column, unassigned)
+    Ready {
+        /// Board name or ID
+        #[arg(long, short = 'b')]
+        board: Option<String>,
+    },
+
+    /// Claim a card: assign to self and move to "In Progress"
+    Claim {
+        /// Card number
+        number: u64,
+    },
+
+    /// Add a progress comment to a card
+    Progress {
+        /// Card number
+        number: u64,
+        /// Progress message
+        message: String,
+    },
+
+    /// Mark card done: close and optionally add a final comment
+    Done {
+        /// Card number
+        number: u64,
+        /// Optional closing comment
+        message: Option<String>,
+    },
+
+    /// Move card to "Review" column for human review
+    Review {
+        /// Card number
+        number: u64,
+        /// Optional review comment
+        message: Option<String>,
+    },
+
     /// List pinned cards
     Pins,
 
