@@ -16,147 +16,175 @@ cd fizzy-cli
 cargo install --path .
 ```
 
-## Setup
+## Quick Start
+
+### 1. Create an API key
+
+Log in to [app.fizzy.do](https://app.fizzy.do), go to your account settings, and create a personal access token.
+
+### 2. Authenticate
+
+Pass your token to `fz` using any of these methods:
 
 ```bash
-# Authenticate with your Fizzy account
-fz login
+# Option A: store in config (recommended)
+fz login --token YOUR_TOKEN
 
-# Initialize a project (creates board, .fz.toml, Claude Code hooks)
+# Option B: environment variable
+export FIZZY_TOKEN=YOUR_TOKEN
+```
+
+`fz login` without `--token` will start an interactive magic-link flow via email.
+
+### 3. Verify
+
+```bash
+fz whoami       # confirm your identity
+fz accounts     # list available accounts
+fz config       # show current configuration
+```
+
+If you have multiple accounts, set a default:
+
+```bash
+fz set account my-org
+```
+
+### 4. Initialize a project
+
+Run this in your project directory to create a board and wire up agent hooks:
+
+```bash
 fz init --name "My Project"
+```
 
-# Or adopt an existing board
+Or adopt an existing board:
+
+```bash
 fz init --board existing-board-name
+```
+
+This creates `.fz.toml` in your project root and, if you use Claude Code, adds a session hook to `fz prime` on startup and appends workflow docs to `CLAUDE.md`.
+
+## Usage
+
+### Listing and filtering cards
+
+```bash
+fz cards                                    # all cards on the default board
+fz cards --column "In Progress"             # filter by column
+fz cards --assignee me --tag bug            # filter by assignee and tag
+fz cards --search "auth" --sort newest      # search with sorting
+```
+
+### Working with cards
+
+```bash
+fz card show 12                             # view card details
+fz card create "Fix timeout" -b my-board    # create a card
+fz card create "Add caching" -b my-board -d "Description here" --tags perf
+fz card close 12                            # close a card
+fz card reopen 12                           # reopen a closed card
+fz card postpone 12                         # move to Not Now
+fz card assign 12 USER_ID                   # toggle assignment
+fz card tag 12 bug                          # toggle a tag
+fz card gold 12                             # mark as priority
+```
+
+### Comments, reactions, and checklists
+
+```bash
+fz card comment 12                          # list comments
+fz card comment 12 "Found the root cause"   # add a comment
+fz card react 12 "👍"                       # add a reaction
+fz card step-add 12 "Write migration"       # add a checklist item
+fz card step-complete 12 STEP_ID            # check it off
+```
+
+### Boards and columns
+
+```bash
+fz boards                                   # list boards
+fz board create "Sprint 4"                  # create a board
+fz columns BOARD_ID                         # list columns
+fz column create BOARD_ID "Blocked" --color Pink
+```
+
+### Webhooks
+
+```bash
+fz webhooks BOARD_ID
+fz webhook create BOARD_ID --name "CI" \
+  --payload-url https://ci.example.com/hook \
+  --actions card_created,card_closed
+```
+
+### Other commands
+
+```bash
+fz users                # list account users
+fz tags                 # list tags
+fz pins                 # pinned cards
+fz notifications        # list notifications
 ```
 
 ## Agent Workflow
 
-`fz` is designed for AI coding agents. The `init` command sets up Claude Code hooks and documents the workflow in your `CLAUDE.md` so agents can manage tasks autonomously.
+`fz` includes commands designed for AI coding agents (e.g., Claude Code). The `fz init` command sets up hooks and documentation so agents can pick up, track, and close tasks autonomously.
+
+### Lifecycle
 
 ```bash
-# See board context — your cards, what's ready, what's blocked
-fz prime
-
-# Pick up a card
-fz claim 12
-
-# Log progress
-fz progress 12 "implemented auth module"
-
-# Send to review or close
-fz review 12
-fz done 12
+fz prime                # board context: your cards, ready cards, blocked cards
+fz ready                # cards available for pickup (respects dependencies)
+fz claim 12             # assign to self, move to In Progress
+fz progress 12 "msg"    # log a progress comment
+fz review 12            # move to Review column
+fz done 12              # close the card
 ```
 
 ### Dependencies
 
-Cards can depend on other cards using `#after-N` tags:
+Cards can depend on other cards. Dependencies use `#after-N` tags — a card tagged `#after-12` won't appear in `fz ready` until card 12 is closed.
 
 ```bash
-# Card 15 depends on card 12
-fz dep 15 12
-
-# See what's blocked and what's available
-fz blocked
-fz ready
+fz dep 15 12            # card 15 depends on card 12
+fz blocked              # show cards with unsatisfied dependencies
 ```
-
-Cards with unsatisfied dependencies won't appear in `fz ready`.
 
 ### Plans
 
-Each card can have a plan stored as a comment with a `💡` reaction:
+Each card can have a plan stored as a comment marked with a `💡` reaction:
 
 ```bash
-# View the plan for card 12
-fz plan 12
-
-# Set a plan
-fz plan 12 "1. Add auth middleware\n2. Write tests\n3. Update docs"
-```
-
-## Card Management
-
-```bash
-# List cards (with filters)
-fz cards --column "In Progress" --assignee me --tag bug
-fz cards --search "auth" --sort newest
-
-# Create a card
-fz card create "Fix login timeout" -b my-board -d "Users report 30s hangs"
-
-# Card operations
-fz card show 12
-fz card close 12
-fz card reopen 12
-fz card postpone 12
-fz card assign 12 USER_ID
-fz card tag 12 bug
-fz card gold 12          # mark as priority
-```
-
-### Comments & Reactions
-
-```bash
-fz card comment 12 "Found the root cause"
-fz card react 12 "👍"
-```
-
-### Steps (Checklists)
-
-```bash
-fz card step-add 12 "Write migration"
-fz card step-complete 12 STEP_ID
-```
-
-## Board & Column Management
-
-```bash
-fz boards
-fz board create "Sprint 4"
-fz columns BOARD_ID
-fz column create BOARD_ID "Blocked" --color Pink
-```
-
-## Webhooks
-
-```bash
-fz webhooks BOARD_ID
-fz webhook create BOARD_ID --name "CI" --payload-url https://ci.example.com/hook --actions card_created,card_closed
-```
-
-## Other Commands
-
-```bash
-fz whoami              # current user info
-fz users               # list account users
-fz tags                # list tags
-fz pins                # list pinned cards
-fz notifications       # list notifications
-fz config              # show current config
-fz set account my-org  # set default account
+fz plan 12              # view the plan
+fz plan 12 "1. Add auth middleware\n2. Write tests"   # set a plan
 ```
 
 ## Configuration
 
 ### Global config
 
-`~/.config/fizzy/config.toml`:
+Stored at `~/.config/fizzy/config.toml`:
 
 ```toml
-base_url = "https://app.fizzy.do"
+token = "your-api-key"
 account = "my-org"
-token = "your-token"
-board = "default-board-id"
+base_url = "https://app.fizzy.do"   # optional, this is the default
+board = "default-board-id"          # optional, used by agent commands
 ```
 
+The config file is created with `0600` permissions to protect your token.
+
 ### Environment variables
+
+Environment variables take precedence over the config file:
 
 | Variable | Overrides |
 |----------|-----------|
 | `FIZZY_TOKEN` | `token` |
-| `FIZZY_URL` | `base_url` |
 | `FIZZY_ACCOUNT` | `account` |
+| `FIZZY_URL` | `base_url` |
 
 ### Project config
 
@@ -167,13 +195,15 @@ board_id = "board-uuid"
 account = "my-org"
 ```
 
-## Global Flags
+### Global flags
+
+These flags work with any command:
 
 | Flag | Description |
 |------|-------------|
-| `--json` | Output raw JSON |
-| `-a, --account` | Override account |
-| `--url` | Override API URL |
+| `--json` | Output raw JSON instead of formatted tables |
+| `-a, --account SLUG` | Override the default account |
+| `--url URL` | Override the API base URL |
 
 ## License
 
