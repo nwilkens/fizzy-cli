@@ -352,79 +352,59 @@ pub async fn dep(client: &FizzyClient, number: u64, depends_on: u64) -> Result<(
 
 // --- plan ---
 
-/// Find the plan comment on a card. Checks for 💡 reaction first (via API),
-/// falls back to ## Plan text prefix.
-async fn find_plan_comment(client: &FizzyClient, number: u64) -> Result<Option<Comment>> {
-    let comments: Vec<Comment> = client
-        .get_list(&format!("/cards/{number}/comments"), true)
-        .await
-        .unwrap_or_default();
+/// Check if a card's description contains a ## Plan section.
+fn has_plan(description: &str) -> bool {
+    description.contains(PLAN_PREFIX)
+}
 
-    // First pass: check for ## Plan prefix in text (fast, no extra API calls)
-    for c in &comments {
-        if c.body.plain_text.starts_with(PLAN_PREFIX) {
-            return Ok(Some(c.clone()));
-        }
-    }
-
-    // Second pass: check for 💡 reaction on non-system comments
-    for c in &comments {
-        if c.creator.name == "System" {
-            continue;
-        }
-        let reactions: Vec<Reaction> = client
-            .get_list(
-                &format!("/cards/{number}/comments/{}/reactions", c.id),
-                true,
-            )
-            .await
-            .unwrap_or_default();
-        if reactions.iter().any(|r| r.content == PLAN_REACTION) {
-            return Ok(Some(c.clone()));
-        }
-    }
-
-    Ok(None)
+/// Extract the plan section from a card description.
+fn extract_plan(description: &str) -> Option<&str> {
+    let start = description.find(PLAN_PREFIX)?;
+    Some(description[start..].trim())
 }
 
 pub async fn plan(client: &FizzyClient, number: u64, text: Option<&str>) -> Result<()> {
+    let card: Card = client.get(&format!("/cards/{number}")).await?;
+
     if let Some(plan_text) = text {
-        // Set the plan: create comment with ## Plan prefix, then react with 💡
-        let body_text = format!("{PLAN_PREFIX}\n{plan_text}");
-        let body = CreateCommentRequest {
-            comment: CreateCommentBody {
-                body: body_text,
+        // Append ## Plan to description (or replace existing plan section)
+        let new_desc = if has_plan(&card.description) {
+            // Replace everything from ## Plan onward
+            let before = card.description.split(PLAN_PREFIX).next().unwrap_or("");
+            format!("{}\n{PLAN_PREFIX}\n{plan_text}", before.trim_end())
+        } else if card.description.is_empty() {
+            format!("{PLAN_PREFIX}\n{plan_text}")
+        } else {
+            format!("{}\n\n{PLAN_PREFIX}\n{plan_text}", card.description)
+        };
+
+        let body = UpdateCardRequest {
+            card: UpdateCardBody {
+                title: None,
+                description: Some(new_desc),
+                status: None,
+                tag_ids: None,
             },
         };
-        let raw = client
-            .post_raw(&format!("/cards/{number}/comments"), &body)
-            .await?;
+        client.put(&format!("/cards/{number}"), &body).await?;
 
-        // Extract comment ID from response to react to it
-        if let Some(comment_id) = raw.get("id").and_then(|v| v.as_str()) {
-            let reaction_body = CreateReactionRequest {
-                reaction: CreateReactionBody {
-                    content: PLAN_REACTION.to_string(),
-                },
-            };
-            let _ = client
-                .post_raw(
-                    &format!("/cards/{number}/comments/{comment_id}/reactions"),
-                    &reaction_body,
-                )
-                .await;
-        }
+        // Add 💡 reaction on the card to mark it as having a plan
+        let reaction_body = CreateReactionRequest {
+            reaction: CreateReactionBody {
+                content: PLAN_REACTION.to_string(),
+            },
+        };
+        let _ = client
+            .post_raw(&format!("/cards/{number}/reactions"), &reaction_body)
+            .await;
 
         println!("Plan set on #{number} 💡");
     } else {
         // Show the plan
-        match find_plan_comment(client, number).await? {
-            Some(c) => {
-                println!("{}", c.body.plain_text);
-            }
-            None => {
-                println!("No plan found on #{number}. Set one with: fizzyctl plan {number} \"plan text\"");
-            }
+        if let Some(plan) = extract_plan(&card.description) {
+            println!("{plan}");
+        } else {
+            println!("No plan on #{number}. Set one with: fizzyctl plan {number} \"plan text\"");
         }
     }
     Ok(())
@@ -477,7 +457,7 @@ pub async fn claim(client: &FizzyClient, number: u64) -> Result<()> {
     Ok(())
 }
 
-/// Print a rich task brief for agent context. Used by `claim` and can be called standalone.
+/// Print a rich task brief for agent context.
 async fn print_task_brief(client: &FizzyClient, card: &Card, number: u64) -> Result<()> {
     println!("---");
     println!("# Task #{}: {}", card.number, card.title);
@@ -509,28 +489,14 @@ async fn print_task_brief(client: &FizzyClient, card: &Card, number: u64) -> Res
         }
     }
 
-    // Show plan if one exists
-    let plan = find_plan_comment(client, number).await?;
-    if let Some(ref p) = plan {
-        println!("## Plan (💡)");
-        // Strip the "## Plan\n" prefix from display since we already have the header
-        let text = p.body.plain_text.strip_prefix(PLAN_PREFIX).unwrap_or(&p.body.plain_text);
-        let text = text.trim_start_matches('\n');
-        println!("{text}");
-        println!();
-    }
-
-    // Show recent non-system, non-plan comments
+    // Show recent non-system comments
     let comments: Vec<Comment> = client
         .get_list(&format!("/cards/{number}/comments"), true)
         .await
         .unwrap_or_default();
     let user_comments: Vec<&Comment> = comments
         .iter()
-        .filter(|c| {
-            c.creator.name != "System"
-                && !c.body.plain_text.starts_with(PLAN_PREFIX)
-        })
+        .filter(|c| c.creator.name != "System")
         .collect();
     if !user_comments.is_empty() {
         let show = if user_comments.len() > 5 {
@@ -545,8 +511,8 @@ async fn print_task_brief(client: &FizzyClient, card: &Card, number: u64) -> Res
         println!();
     }
 
-    if plan.is_some() {
-        println!("Plan exists. Implement it, then:");
+    if has_plan(&card.description) {
+        println!("Plan exists in description. Implement it, then:");
     } else {
         println!("No plan yet. Enter plan mode (`/plan`) to design your approach, then:");
     }
