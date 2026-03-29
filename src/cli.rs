@@ -108,6 +108,13 @@ pub enum Commands {
 
     // --- Agent workflow commands ---
 
+    /// Initialize a project for fizzyctl (board, columns, hooks, CLAUDE.md)
+    Init {
+        /// Board name (defaults to directory name)
+        #[arg(long)]
+        name: Option<String>,
+    },
+
     /// Show current identity and user info
     Whoami,
 
@@ -118,11 +125,26 @@ pub enum Commands {
         board: Option<String>,
     },
 
-    /// Show cards ready for pickup (in "To Do" column, unassigned)
+    /// Show cards ready for pickup (dependency-aware)
     Ready {
         /// Board name or ID
         #[arg(long, short = 'b')]
         board: Option<String>,
+    },
+
+    /// Show cards blocked by unsatisfied dependencies
+    Blocked {
+        /// Board name or ID
+        #[arg(long, short = 'b')]
+        board: Option<String>,
+    },
+
+    /// Add a dependency: card depends on another (#after-N tag)
+    Dep {
+        /// Card number that has the dependency
+        number: u64,
+        /// Card number it depends on
+        depends_on: u64,
     },
 
     /// Claim a card: assign to self and move to "In Progress"

@@ -4,6 +4,9 @@ use crate::client::FizzyClient;
 use crate::config::Config;
 use crate::models::*;
 use crate::output;
+use crate::project::ProjectConfig;
+
+const DEP_PREFIX: &str = "after-";
 
 /// Get the current user's ID in the active account.
 async fn my_user_id(client: &FizzyClient) -> Result<(String, String)> {
@@ -25,17 +28,53 @@ async fn find_column(client: &FizzyClient, board_id: &str, name: &str) -> Result
     columns
         .into_iter()
         .find(|c| c.name.eq_ignore_ascii_case(name))
-        .ok_or_else(|| anyhow!("Column \"{name}\" not found on this board. Available: use `fizzyctl columns <board_id>`"))
+        .ok_or_else(|| {
+            anyhow!("Column \"{name}\" not found. Use `fizzyctl columns <board_id>`")
+        })
 }
 
-/// Resolve board ID from flag, config, or error.
-fn resolve_board_id(board_flag: Option<&str>, config: &Config) -> Result<String> {
-    board_flag
-        .map(|s| s.to_string())
-        .or_else(|| config.board.clone())
-        .ok_or_else(|| {
-            anyhow!("No board specified. Use --board <id> or `fizzyctl set board <id>`.")
+/// Resolve board ID: flag > project config > global config.
+pub fn resolve_board_id(
+    board_flag: Option<&str>,
+    project: &ProjectConfig,
+    config: &Config,
+) -> Result<String> {
+    ProjectConfig::resolve_board(board_flag, project, config)
+}
+
+/// Parse #after-N tags and return the dependency card numbers.
+fn parse_deps(tags: &[String]) -> Vec<u64> {
+    tags.iter()
+        .filter_map(|t| t.strip_prefix(DEP_PREFIX).and_then(|n| n.parse::<u64>().ok()))
+        .collect()
+}
+
+/// Check if all dependencies are satisfied.
+/// Cards not in the open list are assumed closed (the default list only returns open cards).
+fn deps_satisfied(card: &Card, open_cards: &[Card]) -> bool {
+    let deps = parse_deps(&card.tags);
+    if deps.is_empty() {
+        return true;
+    }
+    for dep_num in deps {
+        // If the dependency card is in the open cards list, it's NOT closed → not satisfied
+        if open_cards.iter().any(|c| c.number == dep_num) {
+            return false;
+        }
+        // If not in the list, it's either closed or doesn't exist → treat as satisfied
+    }
+    true
+}
+
+/// Get unsatisfied dependencies for a card.
+fn unsatisfied_deps(card: &Card, open_cards: &[Card]) -> Vec<u64> {
+    parse_deps(&card.tags)
+        .into_iter()
+        .filter(|dep_num| {
+            // If found in open cards, it's not closed → still blocking
+            open_cards.iter().any(|c| c.number == *dep_num)
         })
+        .collect()
 }
 
 // --- whoami ---
@@ -67,19 +106,18 @@ pub async fn whoami(client: &FizzyClient, json: bool) -> Result<()> {
 pub async fn prime(
     client: &FizzyClient,
     config: &Config,
+    project: &ProjectConfig,
     board_flag: Option<&str>,
     json: bool,
 ) -> Result<()> {
-    let board_id = resolve_board_id(board_flag, config)?;
+    let board_id = resolve_board_id(board_flag, project, config)?;
     let (my_id, my_name) = my_user_id(client).await?;
 
-    // Fetch board, columns, and cards in parallel
     let board: Board = client.get(&format!("/boards/{board_id}")).await?;
     let columns: Vec<Column> = client
         .get_list(&format!("/boards/{board_id}/columns"), true)
         .await?;
 
-    // Fetch my cards (assigned to me, on this board)
     let my_cards: Vec<Card> = client
         .get_list(
             &format!("/cards?board_ids[]={board_id}&assignee_ids[]={my_id}"),
@@ -87,15 +125,20 @@ pub async fn prime(
         )
         .await?;
 
-    // Fetch cards awaiting triage (no column) and "To Do" cards
     let all_cards: Vec<Card> = client
         .get_list(&format!("/cards?board_ids[]={board_id}"), true)
         .await?;
 
     if json {
         let mut ctx = serde_json::Map::new();
-        ctx.insert("board".into(), serde_json::json!({ "id": board.id, "name": board.name }));
-        ctx.insert("user".into(), serde_json::json!({ "id": my_id, "name": my_name }));
+        ctx.insert(
+            "board".into(),
+            serde_json::json!({ "id": board.id, "name": board.name }),
+        );
+        ctx.insert(
+            "user".into(),
+            serde_json::json!({ "id": my_id, "name": my_name }),
+        );
         ctx.insert(
             "columns".into(),
             serde_json::json!(columns.iter().map(|c| &c.name).collect::<Vec<_>>()),
@@ -107,23 +150,30 @@ pub async fn prime(
 
         let ready: Vec<_> = all_cards
             .iter()
-            .filter(|c| is_ready(c))
+            .filter(|c| is_ready(c, &all_cards))
             .map(card_summary)
             .collect();
         ctx.insert("ready".into(), serde_json::json!(ready));
 
-        let in_triage: Vec<_> = all_cards
+        let blocked: Vec<_> = all_cards
             .iter()
-            .filter(|c| c.column.is_none() && c.closed != Some(true) && c.postponed != Some(true))
-            .map(card_summary)
+            .filter(|c| is_open(c) && !deps_satisfied(c, &all_cards) && !parse_deps(&c.tags).is_empty())
+            .map(|c| {
+                let mut s = card_summary(c);
+                s.as_object_mut().unwrap().insert(
+                    "blocked_by".into(),
+                    serde_json::json!(unsatisfied_deps(c, &all_cards)),
+                );
+                s
+            })
             .collect();
-        ctx.insert("triage".into(), serde_json::json!(in_triage));
+        ctx.insert("blocked".into(), serde_json::json!(blocked));
 
         output::print_json(&serde_json::Value::Object(ctx));
         return Ok(());
     }
 
-    // Human/agent-readable compact output
+    // Compact text output
     println!("# Fizzy Context");
     println!("Board: {} ({})", board.name, board.id);
     println!("You: {} ({})", my_name, my_id);
@@ -140,58 +190,57 @@ pub async fn prime(
     // My active cards
     let active: Vec<&Card> = my_cards
         .iter()
-        .filter(|c| c.closed != Some(true) && c.postponed != Some(true))
+        .filter(|c| is_open(c))
         .collect();
     if !active.is_empty() {
         println!("## Your active cards:");
         for c in &active {
-            let col = c
-                .column
-                .as_ref()
-                .map(|col| col.name.as_str())
-                .unwrap_or("triage");
-            let tags = format_tags(&c.tags);
-            println!("  #{} {} [{}]{}", c.number, c.title, col, tags);
+            let col = col_name(c);
+            let tags = format_tags_without_deps(&c.tags);
+            let deps = format_deps(&c.tags);
+            println!("  #{} {} [{}]{}{}", c.number, c.title, col, tags, deps);
         }
         println!();
     }
 
-    // Ready for pickup
-    let ready: Vec<&Card> = all_cards.iter().filter(|c| is_ready(c)).collect();
+    // Ready for pickup (dependency-aware)
+    let ready: Vec<&Card> = all_cards.iter().filter(|c| is_ready(c, &all_cards)).collect();
     if !ready.is_empty() {
         println!("## Ready for pickup:");
         for c in &ready {
-            let col = c
-                .column
-                .as_ref()
-                .map(|col| col.name.as_str())
-                .unwrap_or("triage");
-            let tags = format_tags(&c.tags);
+            let col = col_name(c);
+            let tags = format_tags_without_deps(&c.tags);
             println!("  #{} {} [{}]{}", c.number, c.title, col, tags);
         }
         println!();
     }
 
-    // In triage (backlog)
-    let triage: Vec<&Card> = all_cards
+    // Blocked cards
+    let blocked: Vec<&Card> = all_cards
         .iter()
-        .filter(|c| c.column.is_none() && c.closed != Some(true) && c.postponed != Some(true))
+        .filter(|c| is_open(c) && !deps_satisfied(c, &all_cards) && !parse_deps(&c.tags).is_empty())
         .collect();
-    if !triage.is_empty() {
-        println!("## In triage (backlog):");
-        for c in &triage {
-            let tags = format_tags(&c.tags);
-            println!("  #{} {}{}", c.number, c.title, tags);
+    if !blocked.is_empty() {
+        println!("## Blocked:");
+        for c in &blocked {
+            let waiting: Vec<u64> = unsatisfied_deps(c, &all_cards);
+            let waiting_str: Vec<String> = waiting.iter().map(|n| format!("#{n}")).collect();
+            println!(
+                "  #{} {} — waiting on {}",
+                c.number,
+                c.title,
+                waiting_str.join(", ")
+            );
         }
         println!();
     }
 
     println!("## Workflow:");
-    println!("  1. `fizzyctl claim <number>` — assign to self, move to In Progress");
-    println!("  2. Do the work, commit atomically");
-    println!("  3. `fizzyctl progress <number> \"message\"` — log progress");
-    println!("  4. `fizzyctl review <number>` — move to Review, or");
-    println!("     `fizzyctl done <number>` — close the card");
+    println!("  fizzyctl claim <n>       — assign to self, move to In Progress");
+    println!("  fizzyctl progress <n> .. — log progress comment");
+    println!("  fizzyctl review <n>      — move to Review");
+    println!("  fizzyctl done <n>        — close the card");
+    println!("  fizzyctl dep <n> <dep>   — add dependency (#after-N tag)");
 
     Ok(())
 }
@@ -201,16 +250,20 @@ pub async fn prime(
 pub async fn ready(
     client: &FizzyClient,
     config: &Config,
+    project: &ProjectConfig,
     board_flag: Option<&str>,
     json: bool,
 ) -> Result<()> {
-    let board_id = resolve_board_id(board_flag, config)?;
+    let board_id = resolve_board_id(board_flag, project, config)?;
 
     let all_cards: Vec<Card> = client
         .get_list(&format!("/cards?board_ids[]={board_id}"), true)
         .await?;
 
-    let ready_cards: Vec<&Card> = all_cards.iter().filter(|c| is_ready(c)).collect();
+    let ready_cards: Vec<&Card> = all_cards
+        .iter()
+        .filter(|c| is_ready(c, &all_cards))
+        .collect();
 
     if json {
         let summaries: Vec<_> = ready_cards.iter().map(|c| card_summary(c)).collect();
@@ -220,25 +273,84 @@ pub async fn ready(
     } else {
         println!("Cards ready for pickup:");
         for c in &ready_cards {
-            let col = c
-                .column
-                .as_ref()
-                .map(|col| col.name.as_str())
-                .unwrap_or("triage");
-            let tags = format_tags(&c.tags);
+            let col = col_name(c);
+            let tags = format_tags_without_deps(&c.tags);
+            println!("  #{} {} [{}]{}", c.number, c.title, col, tags);
+        }
+    }
+    Ok(())
+}
+
+// --- blocked ---
+
+pub async fn blocked(
+    client: &FizzyClient,
+    config: &Config,
+    project: &ProjectConfig,
+    board_flag: Option<&str>,
+    json: bool,
+) -> Result<()> {
+    let board_id = resolve_board_id(board_flag, project, config)?;
+
+    let all_cards: Vec<Card> = client
+        .get_list(&format!("/cards?board_ids[]={board_id}"), true)
+        .await?;
+
+    let blocked_cards: Vec<&Card> = all_cards
+        .iter()
+        .filter(|c| {
+            is_open(c) && !parse_deps(&c.tags).is_empty() && !deps_satisfied(c, &all_cards)
+        })
+        .collect();
+
+    if json {
+        let summaries: Vec<_> = blocked_cards
+            .iter()
+            .map(|c| {
+                let mut s = card_summary(c);
+                s.as_object_mut().unwrap().insert(
+                    "blocked_by".into(),
+                    serde_json::json!(unsatisfied_deps(c, &all_cards)),
+                );
+                s
+            })
+            .collect();
+        output::print_json(&serde_json::json!(summaries));
+    } else if blocked_cards.is_empty() {
+        println!("No blocked cards.");
+    } else {
+        println!("Blocked cards:");
+        for c in &blocked_cards {
+            let waiting: Vec<u64> = unsatisfied_deps(c, &all_cards);
+            let waiting_str: Vec<String> = waiting.iter().map(|n| format!("#{n}")).collect();
             println!(
-                "  #{} {} [{}]{}",
-                c.number, c.title, col, tags
+                "  #{} {} — blocked by {}",
+                c.number,
+                c.title,
+                waiting_str.join(", ")
             );
         }
     }
     Ok(())
 }
 
+// --- dep ---
+
+pub async fn dep(client: &FizzyClient, number: u64, depends_on: u64) -> Result<()> {
+    let tag_title = format!("{DEP_PREFIX}{depends_on}");
+    let body = TaggingRequest {
+        tag_title: tag_title.clone(),
+    };
+    client
+        .post_raw(&format!("/cards/{number}/taggings"), &body)
+        .await?;
+    println!("#{number} now depends on #{depends_on} (tag: #{tag_title})");
+    Ok(())
+}
+
 // --- claim ---
 
 pub async fn claim(client: &FizzyClient, number: u64) -> Result<()> {
-    // Get the card to find its board
     let card: Card = client.get(&format!("/cards/{number}")).await?;
 
     if card.closed == Some(true) {
@@ -248,14 +360,12 @@ pub async fn claim(client: &FizzyClient, number: u64) -> Result<()> {
     let board_id = &card.board.id;
     let (my_id, my_name) = my_user_id(client).await?;
 
-    // Check if already assigned to me
     let already_assigned = card
         .assignees
         .as_ref()
         .map(|a| a.iter().any(|u| u.id == my_id))
         .unwrap_or(false);
 
-    // Assign to self if not already
     if !already_assigned {
         let body = AssignmentRequest {
             assignee_id: my_id,
@@ -265,7 +375,6 @@ pub async fn claim(client: &FizzyClient, number: u64) -> Result<()> {
             .await?;
     }
 
-    // Move to "In Progress" column
     match find_column(client, board_id, "In Progress").await {
         Ok(col) => {
             let body = TriageRequest {
@@ -275,9 +384,7 @@ pub async fn claim(client: &FizzyClient, number: u64) -> Result<()> {
                 .post_raw(&format!("/cards/{number}/triage"), &body)
                 .await?;
         }
-        Err(_) => {
-            // No "In Progress" column — just assign, don't move
-        }
+        Err(_) => {}
     }
 
     println!("Claimed #{number} — assigned to {my_name}, moved to In Progress.");
@@ -321,11 +428,7 @@ pub async fn done(client: &FizzyClient, number: u64, message: Option<&str>) -> R
 
 // --- review ---
 
-pub async fn review(
-    client: &FizzyClient,
-    number: u64,
-    message: Option<&str>,
-) -> Result<()> {
+pub async fn review(client: &FizzyClient, number: u64, message: Option<&str>) -> Result<()> {
     let card: Card = client.get(&format!("/cards/{number}")).await?;
     let board_id = &card.board.id;
 
@@ -340,7 +443,6 @@ pub async fn review(
             .await?;
     }
 
-    // Move to "Review" column
     match find_column(client, board_id, "Review").await {
         Ok(col) => {
             let body = TriageRequest {
@@ -361,9 +463,13 @@ pub async fn review(
 
 // --- helpers ---
 
-/// A card is "ready" if it's in a "To Do"-like column or in triage, unassigned, and open.
-fn is_ready(card: &Card) -> bool {
-    if card.closed == Some(true) || card.postponed == Some(true) {
+fn is_open(card: &Card) -> bool {
+    card.closed != Some(true) && card.postponed != Some(true)
+}
+
+/// A card is "ready" if it's open, unassigned, in To Do or triage, AND all deps are satisfied.
+fn is_ready(card: &Card, all_cards: &[Card]) -> bool {
+    if !is_open(card) {
         return false;
     }
     let has_assignees = card
@@ -374,33 +480,63 @@ fn is_ready(card: &Card) -> bool {
     if has_assignees {
         return false;
     }
-    // In "To Do" column or in triage (no column)
-    match &card.column {
+    // Must be in "To Do" column or in triage (no column)
+    let in_right_column = match &card.column {
         Some(col) => col.name.eq_ignore_ascii_case("to do"),
-        None => true, // triage = ready for pickup
+        None => true,
+    };
+    if !in_right_column {
+        return false;
     }
+    // All dependencies must be satisfied
+    deps_satisfied(card, all_cards)
+}
+
+fn col_name(card: &Card) -> &str {
+    card.column
+        .as_ref()
+        .map(|c| c.name.as_str())
+        .unwrap_or("triage")
 }
 
 fn card_summary(card: &Card) -> serde_json::Value {
     serde_json::json!({
         "number": card.number,
         "title": card.title,
-        "column": card.column.as_ref().map(|c| c.name.as_str()).unwrap_or("triage"),
+        "column": col_name(card),
         "tags": card.tags,
+        "deps": parse_deps(&card.tags),
         "assignees": card.assignees.as_ref().map(|a| a.iter().map(|u| u.name.as_str()).collect::<Vec<_>>()).unwrap_or_default(),
     })
 }
 
-fn format_tags(tags: &[String]) -> String {
-    if tags.is_empty() {
+/// Format tags, excluding #after-N dependency tags.
+fn format_tags_without_deps(tags: &[String]) -> String {
+    let visible: Vec<&String> = tags
+        .iter()
+        .filter(|t| !t.starts_with(DEP_PREFIX))
+        .collect();
+    if visible.is_empty() {
         String::new()
     } else {
         format!(
             " {}",
-            tags.iter()
+            visible
+                .iter()
                 .map(|t| format!("#{t}"))
                 .collect::<Vec<_>>()
                 .join(" ")
         )
+    }
+}
+
+/// Format dependency tags as readable text.
+fn format_deps(tags: &[String]) -> String {
+    let deps = parse_deps(tags);
+    if deps.is_empty() {
+        String::new()
+    } else {
+        let dep_strs: Vec<String> = deps.iter().map(|n| format!("#{n}")).collect();
+        format!(" (after {})", dep_strs.join(", "))
     }
 }

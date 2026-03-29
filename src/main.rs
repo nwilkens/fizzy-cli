@@ -4,6 +4,7 @@ mod commands;
 mod config;
 mod models;
 mod output;
+mod project;
 
 use anyhow::Result;
 use clap::Parser;
@@ -249,19 +250,36 @@ async fn main() -> Result<()> {
         }
 
         // --- Agent workflow ---
+        Commands::Init { name } => {
+            let config = Config::load()?;
+            let client = make_client(account_override.as_deref(), url_override.as_deref())?;
+            commands::init::init(&client, &config, name.as_deref()).await?;
+        }
         Commands::Whoami => {
             let client = make_client(account_override.as_deref(), url_override.as_deref())?;
             commands::agent::whoami(&client, json).await?;
         }
         Commands::Prime { board } => {
             let config = Config::load()?;
+            let project = project::ProjectConfig::load_or_default();
             let client = make_client(account_override.as_deref(), url_override.as_deref())?;
-            commands::agent::prime(&client, &config, board.as_deref(), json).await?;
+            commands::agent::prime(&client, &config, &project, board.as_deref(), json).await?;
         }
         Commands::Ready { board } => {
             let config = Config::load()?;
+            let project = project::ProjectConfig::load_or_default();
             let client = make_client(account_override.as_deref(), url_override.as_deref())?;
-            commands::agent::ready(&client, &config, board.as_deref(), json).await?;
+            commands::agent::ready(&client, &config, &project, board.as_deref(), json).await?;
+        }
+        Commands::Blocked { board } => {
+            let config = Config::load()?;
+            let project = project::ProjectConfig::load_or_default();
+            let client = make_client(account_override.as_deref(), url_override.as_deref())?;
+            commands::agent::blocked(&client, &config, &project, board.as_deref(), json).await?;
+        }
+        Commands::Dep { number, depends_on } => {
+            let client = make_client(account_override.as_deref(), url_override.as_deref())?;
+            commands::agent::dep(&client, number, depends_on).await?;
         }
         Commands::Claim { number } => {
             let client = make_client(account_override.as_deref(), url_override.as_deref())?;
