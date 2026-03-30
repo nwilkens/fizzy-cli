@@ -45,7 +45,7 @@ pub fn resolve_board_id(
 }
 
 /// Parse #after-N tags and return the dependency card numbers.
-pub(crate) fn parse_deps(tags: &[String]) -> Vec<u64> {
+fn parse_deps(tags: &[String]) -> Vec<u64> {
     tags.iter()
         .filter_map(|t| t.strip_prefix(DEP_PREFIX).and_then(|n| n.parse::<u64>().ok()))
         .collect()
@@ -53,7 +53,7 @@ pub(crate) fn parse_deps(tags: &[String]) -> Vec<u64> {
 
 /// Check if all dependencies are satisfied.
 /// Cards not in the open list are assumed closed (the default list only returns open cards).
-pub(crate) fn deps_satisfied(card: &Card, open_cards: &[Card]) -> bool {
+fn deps_satisfied(card: &Card, open_cards: &[Card]) -> bool {
     let deps = parse_deps(&card.tags);
     if deps.is_empty() {
         return true;
@@ -69,7 +69,7 @@ pub(crate) fn deps_satisfied(card: &Card, open_cards: &[Card]) -> bool {
 }
 
 /// Get unsatisfied dependencies for a card.
-pub(crate) fn unsatisfied_deps(card: &Card, open_cards: &[Card]) -> Vec<u64> {
+fn unsatisfied_deps(card: &Card, open_cards: &[Card]) -> Vec<u64> {
     parse_deps(&card.tags)
         .into_iter()
         .filter(|dep_num| {
@@ -593,7 +593,7 @@ pub async fn review(client: &FizzyClient, number: u64, message: Option<&str>) ->
 
 // --- helpers ---
 
-pub(crate) fn is_open(card: &Card) -> bool {
+fn is_open(card: &Card) -> bool {
     card.closed != Some(true) && card.postponed != Some(true)
 }
 
@@ -622,7 +622,7 @@ fn is_ready(card: &Card, all_cards: &[Card]) -> bool {
     deps_satisfied(card, all_cards)
 }
 
-pub(crate) fn col_name(card: &Card) -> &str {
+fn col_name(card: &Card) -> &str {
     card.column
         .as_ref()
         .map(|c| c.name.as_str())
